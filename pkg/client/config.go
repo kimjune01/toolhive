@@ -26,6 +26,9 @@ import (
 // defaultURLFieldName is the default URL field name used when no specific mapping exists
 const defaultURLFieldName = "url"
 
+const httpTransportLabel = "http"
+const skillsDirName = "skills"
+
 // ClientApp is an enum of MCP-capable AI clients (IDEs, editors, and coding tools).
 // Only clients that support MCP registration appear here; LLM-gateway-only
 // tools (e.g. Xcode) are represented by the separate LLMClientApp type so
@@ -156,16 +159,29 @@ const (
 // path (e.g. "/apiKeyHelper" or "/env/ANTHROPIC_BASE_URL"). Dots in flat
 // top-level key names (e.g. "/cursor.general.openAIBaseURL") are treated as
 // literals by hujson.Patch.
-// ValueField names which LLMApplyConfig field to write: "GatewayURL",
-// "ProxyBaseURL", "TokenHelperCommand", "PlaceholderAPIKey" (constant "thv-proxy"),
-// or "NodeTLSRejectUnauthorized" (writes "0" when TLSSkipVerify is true).
-// ClearWhenEmpty: when true and the resolved value is empty, the key is removed
-// from the settings file rather than skipped. Use for conditional keys like
-// NODE_TLS_REJECT_UNAUTHORIZED that must be cleaned up when the flag is cleared.
+//
+// Exactly one of ValueField or Literal must be set:
+//   - ValueField names which ApplyConfig field to write. Valid values:
+//     "GatewayURL", "ProxyBaseURL", "ProxyOrigin", "TokenHelperCommand",
+//     "PlaceholderAPIKey", "NodeTLSRejectUnauthorized".
+//     An unrecognised ValueField is a programming error and causes
+//     ConfigureLLMGateway to return an error.
+//   - Literal is written verbatim into the settings key (e.g. a fixed auth
+//     type string). Use Literal instead of ValueField for constant values so
+//     that typos in ValueField are caught as errors rather than silently
+//     written as unexpected strings.
+//
+// ClearWhenEmpty: when true and the resolved value is empty, the key is
+// removed from the settings file rather than skipped. Use for conditional
+// keys like NODE_TLS_REJECT_UNAUTHORIZED that must be cleaned up when the
+// flag is cleared. Ignored when Literal is set (literals are never empty).
 type LLMGatewayKeySpec struct {
-	JSONPointer    string // RFC 6901 path
-	ValueField     string // "GatewayURL" | "ProxyBaseURL" | "TokenHelperCommand" | "PlaceholderAPIKey" | "NodeTLSRejectUnauthorized"
-	ClearWhenEmpty bool   // remove the key when the resolved value is empty
+	JSONPointer string // RFC 6901 path
+	// ValueField: "GatewayURL" | "ProxyBaseURL" | "ProxyOrigin" |
+	// "TokenHelperCommand" | "PlaceholderAPIKey" | "NodeTLSRejectUnauthorized"
+	ValueField     string
+	Literal        string // constant value written verbatim; mutually exclusive with ValueField
+	ClearWhenEmpty bool   // remove the key when the resolved value is empty (ignored for Literal)
 }
 
 // clientAppConfig represents a configuration path for a supported MCP client.
@@ -220,6 +236,10 @@ type clientAppConfig struct {
 	// LLMGatewayKeys lists the JSON Pointer paths and value-field mappings to
 	// apply when setting up (or reverting) LLM gateway access.
 	LLMGatewayKeys []LLMGatewayKeySpec
+	// LLMSetupNote is an optional message printed to stdout after a successful
+	// "thv llm setup" for this client. Use it to surface manual steps that
+	// toolhive cannot automate (e.g. env vars the tool reads from a .env file).
+	LLMSetupNote string
 }
 
 // extractServersKeyFromConfig extracts the servers key from MCPServersPathPrefix
@@ -272,13 +292,13 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".roo", "skills"},
-		SkillsProjectPath: []string{".roo", "skills"},
+		SkillsGlobalPath:  []string{".roo", skillsDirName},
+		SkillsProjectPath: []string{".roo", skillsDirName},
 	},
 	{
 		ClientType:   Cline,
@@ -301,13 +321,13 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".cline", "skills"},
-		SkillsProjectPath: []string{".cline", "skills"},
+		SkillsGlobalPath:  []string{".cline", skillsDirName},
+		SkillsProjectPath: []string{".cline", skillsDirName},
 	},
 	{
 		ClientType:   VSCodeInsider,
@@ -324,19 +344,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		MCPServersPathPrefix: "/servers",
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".copilot", "skills"},
-		SkillsProjectPath: []string{".github", "skills"},
+		SkillsGlobalPath:  []string{".copilot", skillsDirName},
+		SkillsProjectPath: []string{".github", skillsDirName},
 		// LLM gateway: patches settings.json (same dir as mcp.json, different file)
 		LLMGatewayMode:     "proxy",
 		LLMBinaryName:      "code-insiders",
@@ -367,19 +387,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".copilot", "skills"},
-		SkillsProjectPath: []string{".github", "skills"},
+		SkillsGlobalPath:  []string{".copilot", skillsDirName},
+		SkillsProjectPath: []string{".github", skillsDirName},
 		// LLM gateway: patches settings.json (same dir as mcp.json, different file)
 		LLMGatewayMode:     "proxy",
 		LLMBinaryName:      "code",
@@ -403,21 +423,21 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{".cursor"},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		// Adding type field is not explicitly required though, Cursor auto-detects and is able to
 		// connect to both sse and streamable-http types
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".cursor", "skills"},
-		SkillsProjectPath: []string{".cursor", "skills"},
+		SkillsGlobalPath:  []string{".cursor", skillsDirName},
+		SkillsProjectPath: []string{".cursor", skillsDirName},
 		// LLM gateway: patches the editor settings.json (different from the MCP mcp.json)
 		LLMGatewayMode:     "proxy",
 		LLMBinaryName:      "cursor",
@@ -441,19 +461,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".claude", "skills"},
-		SkillsProjectPath: []string{".claude", "skills"},
+		SkillsGlobalPath:  []string{".claude", skillsDirName},
+		SkillsProjectPath: []string{".claude", skillsDirName},
 		// LLM gateway: patches ~/.claude/settings.json (different from the MCP .claude.json)
 		LLMGatewayMode:     "direct",
 		LLMBinaryName:      "claude",
@@ -475,9 +495,9 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{".codeium", "windsurf"},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
@@ -486,8 +506,8 @@ var supportedClientIntegrations = []clientAppConfig{
 			types.TransportTypeStreamableHTTP: "serverUrl",
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".codeium", "windsurf", "skills"},
-		SkillsProjectPath: []string{".windsurf", "skills"},
+		SkillsGlobalPath:  []string{".codeium", "windsurf", skillsDirName},
+		SkillsProjectPath: []string{".windsurf", skillsDirName},
 	},
 	{
 		ClientType:           WindsurfJetBrains,
@@ -497,9 +517,9 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{".codeium"},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
@@ -521,19 +541,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".agents", "skills"},
-		SkillsProjectPath: []string{".agents", "skills"},
+		SkillsGlobalPath:  []string{".agents", skillsDirName},
+		SkillsProjectPath: []string{".agents", skillsDirName},
 	},
 	{
 		ClientType:           AmpVSCode,
@@ -548,15 +568,15 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 	},
 	{
@@ -572,15 +592,15 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 	},
 	{
@@ -596,15 +616,15 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 	},
 	{
@@ -620,15 +640,15 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 	},
 	{
@@ -639,15 +659,15 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{".lmstudio"},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 	},
 	{
@@ -681,8 +701,8 @@ var supportedClientIntegrations = []clientAppConfig{
 			"description": "",
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".agents", "skills"},
-		SkillsProjectPath: []string{".agents", "skills"},
+		SkillsGlobalPath:  []string{".agents", skillsDirName},
+		SkillsProjectPath: []string{".agents", skillsDirName},
 	},
 	{
 		ClientType:           Trae,
@@ -697,19 +717,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		Extension: JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: false,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".agents", "skills"},
-		SkillsProjectPath: []string{".agents", "skills"},
+		SkillsGlobalPath:  []string{".agents", skillsDirName},
+		SkillsProjectPath: []string{".agents", skillsDirName},
 	},
 	{
 		ClientType:           Continue,
@@ -725,9 +745,9 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		// YAML configuration
 		YAMLStorageType:     YAMLStorageTypeArray,
@@ -747,13 +767,13 @@ var supportedClientIntegrations = []clientAppConfig{
 		},
 		IsTransportTypeFieldSupported: true, // OpenCode requires "type": "remote" for URL-based servers
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{"opencode", "skills"},
-		SkillsProjectPath: []string{".opencode", "skills"},
+		SkillsGlobalPath:  []string{"opencode", skillsDirName},
+		SkillsProjectPath: []string{".opencode", skillsDirName},
 		SkillsPlatformPrefix: map[Platform][]string{
 			PlatformLinux:  {".config"},
 			PlatformDarwin: {".config"},
@@ -767,19 +787,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{".kiro", "settings"},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: false,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".kiro", "skills"},
-		SkillsProjectPath: []string{".kiro", "skills"},
+		SkillsGlobalPath:  []string{".kiro", skillsDirName},
+		SkillsProjectPath: []string{".kiro", skillsDirName},
 	},
 	{
 		ClientType:                    Antigravity,
@@ -795,8 +815,8 @@ var supportedClientIntegrations = []clientAppConfig{
 			types.TransportTypeStreamableHTTP: "serverUrl",
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".agents", "skills"},
-		SkillsProjectPath: []string{".agents", "skills"},
+		SkillsGlobalPath:  []string{".agents", skillsDirName},
+		SkillsProjectPath: []string{".agents", skillsDirName},
 	},
 	{
 		ClientType:           Zed,
@@ -812,9 +832,9 @@ var supportedClientIntegrations = []clientAppConfig{
 		Extension:                     JSON,
 		IsTransportTypeFieldSupported: false,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 	},
 	{
@@ -830,23 +850,35 @@ var supportedClientIntegrations = []clientAppConfig{
 		IsTransportTypeFieldSupported: false,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
 			types.TransportTypeStdio:          "httpUrl",
-			types.TransportTypeSSE:            "url",
+			types.TransportTypeSSE:            defaultURLFieldName,
 			types.TransportTypeStreamableHTTP: "httpUrl",
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".agents", "skills"},
-		SkillsProjectPath: []string{".agents", "skills"},
-		// LLM gateway: patches the same settings.json used for MCP
-		LLMGatewayMode:     "direct",
+		SkillsGlobalPath:  []string{".agents", skillsDirName},
+		SkillsProjectPath: []string{".agents", skillsDirName},
+		// LLM gateway: patches the same settings.json used for MCP.
+		// Gemini CLI has no dynamic token-command equivalent, so it uses the
+		// proxy path. GOOGLE_GEMINI_BASE_URL is only honoured when
+		// security.auth.selectedType is "gemini-api-key" (fixed in
+		// gemini-cli v0.40.0, PR #25357); OAuth auth ignores the override.
+		//
+		// NODE_TLS_REJECT_UNAUTHORIZED is intentionally omitted: in proxy mode
+		// the tool connects to the local proxy over plain HTTP, so there is no
+		// TLS handshake on that leg. Setting the env var would globally disable
+		// TLS verification for all other HTTPS requests the Gemini CLI process
+		// makes, which is an unacceptable side-effect.
+		LLMGatewayMode:     "proxy",
 		LLMBinaryName:      "gemini",
 		LLMSettingsFile:    "settings.json",
 		LLMSettingsRelPath: []string{".gemini"},
 		LLMGatewayKeys: []LLMGatewayKeySpec{
-			{JSONPointer: "/auth/tokenCommand", ValueField: "TokenHelperCommand"},
-			{JSONPointer: "/baseUrl", ValueField: "GatewayURL"},
-			// NODE_TLS_REJECT_UNAUTHORIZED is only written when --tls-skip-verify is set.
-			// ClearWhenEmpty ensures it is removed when the flag is later cleared.
-			{JSONPointer: "/env/NODE_TLS_REJECT_UNAUTHORIZED", ValueField: "NodeTLSRejectUnauthorized", ClearWhenEmpty: true},
+			// Force API-key auth so GOOGLE_GEMINI_BASE_URL is respected.
+			{JSONPointer: "/security/auth/selectedType", Literal: "gemini-api-key"},
+			// Placeholder API key (proxy does not validate it).
+			{JSONPointer: "/env/GEMINI_API_KEY", Literal: llmPlaceholderAPIKey},
+			// Proxy origin for Gemini CLI; path is stripped because Gemini
+			// CLI appends its own /v1beta/... path to the base URL.
+			{JSONPointer: "/env/GOOGLE_GEMINI_BASE_URL", ValueField: "ProxyOrigin"},
 		},
 	},
 	{
@@ -859,9 +891,9 @@ var supportedClientIntegrations = []clientAppConfig{
 		MCPServersPathPrefix: "/servers",
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 	},
 	{
@@ -873,20 +905,20 @@ var supportedClientIntegrations = []clientAppConfig{
 		Extension:            TOML,
 		SupportedTransportTypesMap: map[types.TransportType]string{
 			types.TransportTypeStdio:          "streamable-http",
-			types.TransportTypeSSE:            "http",
+			types.TransportTypeSSE:            httpTransportLabel,
 			types.TransportTypeStreamableHTTP: "streamable-http",
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		// TOML configuration: uses array-of-tables format [[mcp_servers]]
 		TOMLStorageType:   TOMLStorageTypeArray,
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".vibe", "skills"},
-		SkillsProjectPath: []string{".vibe", "skills"},
+		SkillsGlobalPath:  []string{".vibe", skillsDirName},
+		SkillsProjectPath: []string{".vibe", skillsDirName},
 	},
 	{
 		ClientType:           Codex,
@@ -898,15 +930,15 @@ var supportedClientIntegrations = []clientAppConfig{
 		// Codex doesn't support a transport type field - it auto-detects
 		IsTransportTypeFieldSupported: false,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		// TOML configuration: uses nested tables format [mcp_servers.servername]
 		TOMLStorageType:   TOMLStorageTypeMap,
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".agents", "skills"},
-		SkillsProjectPath: []string{".agents", "skills"},
+		SkillsGlobalPath:  []string{".agents", skillsDirName},
+		SkillsProjectPath: []string{".agents", skillsDirName},
 	},
 	{
 		ClientType:           KimiCli,
@@ -918,13 +950,13 @@ var supportedClientIntegrations = []clientAppConfig{
 		// Kimi CLI does not use a transport type field in the config file
 		IsTransportTypeFieldSupported: false,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".kimi", "skills"},
-		SkillsProjectPath: []string{".kimi", "skills"},
+		SkillsGlobalPath:  []string{".kimi", skillsDirName},
+		SkillsProjectPath: []string{".kimi", skillsDirName},
 	},
 	{
 		ClientType:           Factory,
@@ -934,19 +966,19 @@ var supportedClientIntegrations = []clientAppConfig{
 		RelPath:              []string{".factory"},
 		Extension:            JSON,
 		SupportedTransportTypesMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "http",
+			types.TransportTypeStdio:          httpTransportLabel,
 			types.TransportTypeSSE:            "sse",
-			types.TransportTypeStreamableHTTP: "http",
+			types.TransportTypeStreamableHTTP: httpTransportLabel,
 		},
 		IsTransportTypeFieldSupported: true,
 		MCPServersUrlLabelMap: map[types.TransportType]string{
-			types.TransportTypeStdio:          "url",
-			types.TransportTypeSSE:            "url",
-			types.TransportTypeStreamableHTTP: "url",
+			types.TransportTypeStdio:          defaultURLFieldName,
+			types.TransportTypeSSE:            defaultURLFieldName,
+			types.TransportTypeStreamableHTTP: defaultURLFieldName,
 		},
 		SupportsSkills:    true,
-		SkillsGlobalPath:  []string{".factory", "skills"},
-		SkillsProjectPath: []string{".factory", "skills"},
+		SkillsGlobalPath:  []string{".factory", skillsDirName},
+		SkillsProjectPath: []string{".factory", skillsDirName},
 	},
 	{
 		// Xcode does not support MCP; it is an LLM-gateway-only entry.
