@@ -820,10 +820,16 @@ _Appears in:_
 - [api.v1alpha1.MCPTelemetryConfigList](#apiv1alpha1mcptelemetryconfiglist)
 - [api.v1alpha1.MCPToolConfig](#apiv1alpha1mcptoolconfig)
 - [api.v1alpha1.MCPToolConfigList](#apiv1alpha1mcptoolconfiglist)
+- [api.v1alpha1.MCPWebhookConfig](#apiv1alpha1mcpwebhookconfig)
+- [api.v1alpha1.MCPWebhookConfigList](#apiv1alpha1mcpwebhookconfiglist)
 - [api.v1alpha1.VirtualMCPCompositeToolDefinition](#apiv1alpha1virtualmcpcompositetooldefinition)
 - [api.v1alpha1.VirtualMCPCompositeToolDefinitionList](#apiv1alpha1virtualmcpcompositetooldefinitionlist)
 - [api.v1alpha1.VirtualMCPServer](#apiv1alpha1virtualmcpserver)
 - [api.v1alpha1.VirtualMCPServerList](#apiv1alpha1virtualmcpserverlist)
+
+
+
+
 
 
 
@@ -1089,6 +1095,40 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the name of the ConfigMap |  | Required: \{\} <br /> |
 | `key` _string_ | Key is the key in the ConfigMap that contains the authorization configuration | authz.json | Optional: \{\} <br /> |
+
+
+#### api.v1beta1.DCRUpstreamConfig
+
+
+
+DCRUpstreamConfig configures RFC 7591 Dynamic Client Registration for an
+OAuth 2.0 upstream. When present on an OAuth2 upstream, the authserver
+performs registration at runtime to obtain client credentials, replacing
+the need to pre-provision a ClientID.
+
+Exactly one of DiscoveryURL or RegistrationEndpoint must be set. DiscoveryURL
+points at an RFC 8414 / OIDC Discovery document from which the registration
+endpoint is resolved; RegistrationEndpoint is used directly when the upstream
+does not publish discovery metadata.
+
+The XOR rule uses has() alone (not has() + size() > 0) to keep the rule's
+estimated CEL cost under the apiserver's per-rule static budget. With
+`omitempty` on both fields, an unset field is absent on the wire and has()
+returns false; the explicit-empty-string edge case is rejected at reconcile
+time by ValidateOAuth2DCRConfig.
+
+
+
+_Appears in:_
+- [api.v1beta1.OAuth2UpstreamConfig](#apiv1beta1oauth2upstreamconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `discoveryUrl` _string_ | DiscoveryURL is the RFC 8414 / OIDC Discovery document URL. The resolver<br />issues a single GET against this URL (no well-known-path fallback) and<br />reads registration_endpoint, authorization_endpoint, token_endpoint,<br />token_endpoint_auth_methods_supported, and scopes_supported from the<br />response.<br />Mutually exclusive with RegistrationEndpoint.<br />HTTPS is required because the registration endpoint resolved from this<br />document carries the initial access token and the issued client_secret<br />(RFC 7591 §3, RFC 8414 §3). MaxLength is a defensive size cap (etcd<br />object budget, regex evaluation cost) and matches the conventional URL<br />length cap. |  | MaxLength: 2048 <br />Pattern: `^https://[^\s?#]+[^/\s?#]$` <br />Optional: \{\} <br /> |
+| `registrationEndpoint` _string_ | RegistrationEndpoint is the RFC 7591 registration endpoint URL used<br />directly, bypassing discovery. When using this field, the caller is<br />expected to also supply AuthorizationEndpoint, TokenEndpoint, and an<br />explicit Scopes list on the parent OAuth2UpstreamConfig.<br />Mutually exclusive with DiscoveryURL.<br />HTTPS is required because the registration endpoint carries the initial<br />access token and the issued client_secret (RFC 7591 §3, RFC 8414 §3).<br />MaxLength is a defensive size cap (etcd object budget, regex evaluation<br />cost) and matches the conventional URL length cap. |  | MaxLength: 2048 <br />Pattern: `^https://[^\s?#]+[^/\s?#]$` <br />Optional: \{\} <br /> |
+| `initialAccessTokenRef` _[api.v1beta1.SecretKeyRef](#apiv1beta1secretkeyref)_ | InitialAccessTokenRef is an optional reference to a Kubernetes Secret<br />carrying an RFC 7591 §3 initial access token. When set, the resolver<br />presents the token value as a Bearer credential on the registration<br />request. Mirrors the ClientSecretRef pattern. |  | Optional: \{\} <br /> |
+| `softwareId` _string_ | SoftwareID is the RFC 7591 "software_id" registration metadata value,<br />identifying the client software independent of any particular<br />registration instance. Typically a UUID or short identifier. |  | MaxLength: 255 <br />Optional: \{\} <br /> |
+| `softwareStatement` _string_ | SoftwareStatement is the RFC 7591 "software_statement" JWT asserting<br />metadata about the client software, signed by a party the authorization<br />server trusts.<br />Stored inline on the CR. The JWT is signed but not encrypted, so its<br />contents are visible to anyone with get/list/watch on this resource and<br />appear in etcd backups in plaintext. Treat the value as non-confidential<br />(signed attestation, not a secret). Operators that rotate software<br />statements like bearer credentials should keep them at the authorization<br />server side and rely on the registration endpoint's initial access<br />token (see InitialAccessTokenRef) instead of placing them on the CR.<br />Bounded to 16384 characters as a defensive size cap (etcd object<br />budget, regex evaluation cost). Real-world signed statements with<br />embedded x5c certificate chains, JWKS keys, or OIDC-Federation<br />trust-framework metadata routinely exceed 4 KB. |  | MaxLength: 16384 <br />Optional: \{\} <br /> |
 
 
 
@@ -2238,6 +2278,7 @@ _Appears in:_
 | `audit` _[api.v1beta1.AuditConfig](#apiv1beta1auditconfig)_ | Audit defines audit logging configuration for the MCP server |  | Optional: \{\} <br /> |
 | `toolConfigRef` _[api.v1beta1.ToolConfigRef](#apiv1beta1toolconfigref)_ | ToolConfigRef references a MCPToolConfig resource for tool filtering and renaming.<br />The referenced MCPToolConfig must exist in the same namespace as this MCPServer.<br />Cross-namespace references are not supported for security and isolation reasons. |  | Optional: \{\} <br /> |
 | `externalAuthConfigRef` _[api.v1beta1.ExternalAuthConfigRef](#apiv1beta1externalauthconfigref)_ | ExternalAuthConfigRef references a MCPExternalAuthConfig resource for external authentication.<br />The referenced MCPExternalAuthConfig must exist in the same namespace as this MCPServer. |  | Optional: \{\} <br /> |
+| `webhookConfigRef` _[api.v1beta1.WebhookConfigRef](#apiv1beta1webhookconfigref)_ | WebhookConfigRef references a MCPWebhookConfig resource for webhook middleware configuration.<br />The referenced MCPWebhookConfig must exist in the same namespace as this MCPServer. |  | Optional: \{\} <br /> |
 | `authServerRef` _[api.v1beta1.AuthServerRef](#apiv1beta1authserverref)_ | AuthServerRef optionally references a resource that configures an embedded<br />OAuth 2.0/OIDC authorization server to authenticate MCP clients.<br />Currently the only supported kind is MCPExternalAuthConfig (type: embeddedAuthServer). |  | Optional: \{\} <br /> |
 | `telemetryConfigRef` _[api.v1beta1.MCPTelemetryConfigReference](#apiv1beta1mcptelemetryconfigreference)_ | TelemetryConfigRef references an MCPTelemetryConfig resource for shared telemetry configuration.<br />The referenced MCPTelemetryConfig must exist in the same namespace as this MCPServer.<br />Cross-namespace references are not supported for security and isolation reasons. |  | Optional: \{\} <br /> |
 | `trustProxyHeaders` _boolean_ | TrustProxyHeaders indicates whether to trust X-Forwarded-* headers from reverse proxies<br />When enabled, the proxy will use X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-Port,<br />and X-Forwarded-Prefix headers to construct endpoint URLs | false | Optional: \{\} <br /> |
@@ -2270,6 +2311,7 @@ _Appears in:_
 | `authServerConfigHash` _string_ | AuthServerConfigHash is the hash of the referenced authServerRef spec,<br />used to detect configuration changes and trigger reconciliation. |  | Optional: \{\} <br /> |
 | `oidcConfigHash` _string_ | OIDCConfigHash is the hash of the referenced MCPOIDCConfig spec for change detection |  | Optional: \{\} <br /> |
 | `telemetryConfigHash` _string_ | TelemetryConfigHash is the hash of the referenced MCPTelemetryConfig spec for change detection |  | Optional: \{\} <br /> |
+| `webhookConfigHash` _string_ | WebhookConfigHash is the hash of the referenced MCPWebhookConfig spec |  | Optional: \{\} <br /> |
 | `url` _string_ | URL is the URL where the MCP server can be accessed |  | Optional: \{\} <br /> |
 | `phase` _[api.v1beta1.MCPServerPhase](#apiv1beta1mcpserverphase)_ | Phase is the current phase of the MCPServer |  | Enum: [Pending Ready Failed Terminating Stopped] <br />Optional: \{\} <br /> |
 | `message` _string_ | Message provides additional information about the current phase |  | Optional: \{\} <br /> |
@@ -2493,6 +2535,40 @@ _Appears in:_
 | `referencingWorkloads` _[api.v1beta1.WorkloadReference](#apiv1beta1workloadreference) array_ | ReferencingWorkloads is a list of workload resources that reference this MCPToolConfig.<br />Each entry identifies the workload by kind and name. |  | Optional: \{\} <br /> |
 
 
+#### api.v1beta1.MCPWebhookConfigSpec
+
+
+
+MCPWebhookConfigSpec defines the desired state of MCPWebhookConfig
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `validating` _[api.v1beta1.WebhookSpec](#apiv1beta1webhookspec) array_ | Validating webhooks are called to approve or deny MCP requests. |  | Optional: \{\} <br /> |
+| `mutating` _[api.v1beta1.WebhookSpec](#apiv1beta1webhookspec) array_ | Mutating webhooks are called to transform MCP requests before processing. |  | Optional: \{\} <br /> |
+
+
+#### api.v1beta1.MCPWebhookConfigStatus
+
+
+
+MCPWebhookConfigStatus defines the observed state of MCPWebhookConfig
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#condition-v1-meta) array_ | Conditions represent the latest available observations |  | Optional: \{\} <br /> |
+| `observedGeneration` _integer_ | ObservedGeneration is the last observed generation corresponding to the current status |  | Optional: \{\} <br /> |
+| `configHash` _string_ | ConfigHash is a hash of the spec, used for detecting changes |  | Optional: \{\} <br /> |
+| `referencingWorkloads` _[api.v1beta1.WorkloadReference](#apiv1beta1workloadreference) array_ | ReferencingWorkloads is a list of workload resources that reference this MCPWebhookConfig.<br />Each entry identifies the workload by kind and name. |  | Optional: \{\} <br /> |
+
+
 #### api.v1beta1.ModelCacheConfig
 
 
@@ -2536,6 +2612,27 @@ _Appears in:_
 OAuth2UpstreamConfig contains configuration for pure OAuth 2.0 providers.
 OAuth 2.0 providers require explicit endpoint configuration.
 
+Exactly one of ClientID or DCRConfig must be set: ClientID is used when the
+client is pre-provisioned out of band, DCRConfig enables RFC 7591 Dynamic
+Client Registration at runtime.
+
+ClientSecretRef is mutually exclusive with DCRConfig: when DCRConfig is set,
+the client_secret is obtained from the registration response (RFC 7591
+§3.2.1) and any static ClientSecretRef would be either dead config or a
+competing source of truth. The XValidation rule below rejects the
+combination at admission; ValidateOAuth2DCRConfig is the matching
+reconcile-time backstop.
+
+Layered XOR behavior: the ClientID/DCRConfig rule treats `clientId: ""` as
+absent (size>0) but treats `dcrConfig: {}` as present (has() is true for an
+empty object). For input `{ clientId: "", dcrConfig: {} }` the outer rule
+passes and the inner DCRUpstreamConfig XOR fires with "exactly one of
+discoveryUrl or registrationEndpoint must be set". This is intentional —
+adding a non-empty subfield check (e.g.,
+`has(self.dcrConfig.discoveryUrl) || has(self.dcrConfig.registrationEndpoint)`)
+would inflate CEL cost on an already-budget-bound rule, and the inner
+message is still actionable.
+
 
 
 _Appears in:_
@@ -2546,12 +2643,13 @@ _Appears in:_
 | `authorizationEndpoint` _string_ | AuthorizationEndpoint is the URL for the OAuth authorization endpoint. |  | Pattern: `^https?://.*$` <br />Required: \{\} <br /> |
 | `tokenEndpoint` _string_ | TokenEndpoint is the URL for the OAuth token endpoint. |  | Pattern: `^https?://.*$` <br />Required: \{\} <br /> |
 | `userInfo` _[api.v1beta1.UserInfoConfig](#apiv1beta1userinfoconfig)_ | UserInfo contains configuration for fetching user information from the upstream provider.<br />When omitted, the embedded auth server runs in synthesis mode for this<br />upstream: a non-PII subject derived from the access token, no Name/Email.<br />Use this shape for upstreams with no userinfo surface (e.g., MCP<br />authorization servers per the MCP spec). |  | Optional: \{\} <br /> |
-| `clientId` _string_ | ClientID is the OAuth 2.0 client identifier registered with the upstream IDP. |  | Required: \{\} <br /> |
+| `clientId` _string_ | ClientID is the OAuth 2.0 client identifier registered with the upstream IDP.<br />Mutually exclusive with DCRConfig: when DCRConfig is set, ClientID is obtained<br />at runtime via RFC 7591 Dynamic Client Registration and must be left empty. |  | Optional: \{\} <br /> |
 | `clientSecretRef` _[api.v1beta1.SecretKeyRef](#apiv1beta1secretkeyref)_ | ClientSecretRef references a Kubernetes Secret containing the OAuth 2.0 client secret.<br />Optional for public clients using PKCE instead of client secret. |  | Optional: \{\} <br /> |
 | `redirectUri` _string_ | RedirectURI is the callback URL where the upstream IDP will redirect after authentication.<br />When not specified, defaults to `\{resourceUrl\}/oauth/callback` where `resourceUrl` is the<br />URL associated with the resource (e.g., MCPServer or vMCP) using this config. |  | Optional: \{\} <br /> |
 | `scopes` _string array_ | Scopes are the OAuth scopes to request from the upstream IDP. |  | Optional: \{\} <br /> |
 | `tokenResponseMapping` _[api.v1beta1.TokenResponseMapping](#apiv1beta1tokenresponsemapping)_ | TokenResponseMapping configures custom field extraction from non-standard token responses.<br />Some OAuth providers (e.g., GovSlack) nest token fields under non-standard paths<br />instead of returning them at the top level. When set, ToolHive performs the token<br />exchange HTTP call directly and extracts fields using the configured dot-notation paths.<br />If nil, standard OAuth 2.0 token response parsing is used. |  | Optional: \{\} <br /> |
 | `additionalAuthorizationParams` _object (keys:string, values:string)_ | AdditionalAuthorizationParams are extra query parameters to include in<br />authorization requests sent to the upstream provider.<br />This is useful for providers that require custom parameters, such as<br />Google's access_type=offline for obtaining refresh tokens.<br />Framework-managed parameters (response_type, client_id, redirect_uri,<br />scope, state, code_challenge, code_challenge_method, nonce) are not allowed. |  | MaxProperties: 16 <br />Optional: \{\} <br /> |
+| `dcrConfig` _[api.v1beta1.DCRUpstreamConfig](#apiv1beta1dcrupstreamconfig)_ | DCRConfig enables RFC 7591 Dynamic Client Registration against the upstream<br />authorization server. When set, the client credentials are obtained at<br />runtime rather than being pre-provisioned, and ClientID must be left empty.<br />Mutually exclusive with ClientID. |  | Optional: \{\} <br /> |
 
 
 #### api.v1beta1.OIDCUpstreamConfig
@@ -2924,6 +3022,7 @@ SecretKeyRef is a reference to a key within a Secret
 
 _Appears in:_
 - [api.v1beta1.BearerTokenConfig](#apiv1beta1bearertokenconfig)
+- [api.v1beta1.DCRUpstreamConfig](#apiv1beta1dcrupstreamconfig)
 - [api.v1beta1.EmbeddedAuthServerConfig](#apiv1beta1embeddedauthserverconfig)
 - [api.v1beta1.EmbeddingServerSpec](#apiv1beta1embeddingserverspec)
 - [api.v1beta1.HeaderFromSecret](#apiv1beta1headerfromsecret)
@@ -2936,6 +3035,8 @@ _Appears in:_
 - [api.v1beta1.SensitiveHeader](#apiv1beta1sensitiveheader)
 - [api.v1beta1.SessionStorageConfig](#apiv1beta1sessionstorageconfig)
 - [api.v1beta1.TokenExchangeConfig](#apiv1beta1tokenexchangeconfig)
+- [api.v1beta1.WebhookSpec](#apiv1beta1webhookspec)
+- [api.v1beta1.WebhookTLSConfig](#apiv1beta1webhooktlsconfig)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -3187,6 +3288,17 @@ _Appears in:_
 
 
 UpstreamProviderConfig defines configuration for an upstream Identity Provider.
+
+Exactly one of OIDCConfig or OAuth2Config must be set and must match the
+declared Type: oidc-typed providers set OIDCConfig, oauth2-typed providers
+set OAuth2Config. The CEL rule below enforces the pairing at admission; the
+matching Go-level check in validateUpstreamProvider provides defense-in-depth
+for stored objects.
+
+The rule is structured as a chain of equality checks ending in an explicit
+`false`, so adding a new UpstreamProviderType value without extending this
+rule fails admission instead of silently demanding the OAuth2 shape. When
+adding a new type, extend both this rule and validateUpstreamProvider.
 
 
 
@@ -3504,6 +3616,80 @@ _Appears in:_
 | `readOnly` _boolean_ | ReadOnly specifies whether the volume should be mounted read-only | false | Optional: \{\} <br /> |
 
 
+#### api.v1beta1.WebhookConfigRef
+
+
+
+WebhookConfigRef defines a reference to a MCPWebhookConfig resource.
+The referenced MCPWebhookConfig must be in the same namespace as the MCPServer.
+
+
+
+_Appears in:_
+- [api.v1beta1.MCPServerSpec](#apiv1beta1mcpserverspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the MCPWebhookConfig resource |  | Required: \{\} <br /> |
+
+
+#### api.v1beta1.WebhookFailurePolicy
+
+_Underlying type:_ _string_
+
+WebhookFailurePolicy defines how webhook errors are handled.
+
+
+
+_Appears in:_
+- [api.v1beta1.WebhookSpec](#apiv1beta1webhookspec)
+
+| Field | Description |
+| --- | --- |
+| `fail` | WebhookFailurePolicyFail denies the request on webhook error.<br /> |
+| `ignore` | WebhookFailurePolicyIgnore allows the request on webhook error.<br /> |
+
+
+#### api.v1beta1.WebhookSpec
+
+
+
+WebhookSpec defines the configuration for a single webhook middleware
+
+
+
+_Appears in:_
+- [api.v1beta1.MCPWebhookConfigSpec](#apiv1beta1mcpwebhookconfigspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is a unique identifier for this webhook |  | MaxLength: 63 <br />MinLength: 1 <br /> |
+| `url` _string_ | URL is the endpoint to call for this webhook. Must be an HTTP/HTTPS URL. |  | Format: uri <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#duration-v1-meta)_ | Timeout configures the maximum time to wait for the webhook to respond.<br />Defaults to 10s if not specified. Maximum is 30s. |  | Format: duration <br />Type: string <br />Optional: \{\} <br /> |
+| `failurePolicy` _[api.v1beta1.WebhookFailurePolicy](#apiv1beta1webhookfailurepolicy)_ | FailurePolicy defines how to handle errors when communicating with the webhook.<br />Supported values: "fail", "ignore". Defaults to "fail". | fail | Enum: [fail ignore] <br />Optional: \{\} <br /> |
+| `tlsConfig` _[api.v1beta1.WebhookTLSConfig](#apiv1beta1webhooktlsconfig)_ | TLSConfig contains optional TLS configuration for the webhook connection. |  | Optional: \{\} <br /> |
+| `hmacSecretRef` _[api.v1beta1.SecretKeyRef](#apiv1beta1secretkeyref)_ | HMACSecretRef references a Kubernetes Secret containing the HMAC signing key<br />used to sign the webhook payload. If set, the X-Toolhive-Signature header will be injected. |  | Optional: \{\} <br /> |
+
+
+#### api.v1beta1.WebhookTLSConfig
+
+
+
+WebhookTLSConfig contains TLS configuration for secure webhook connections
+
+
+
+_Appears in:_
+- [api.v1beta1.WebhookSpec](#apiv1beta1webhookspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `caSecretRef` _[api.v1beta1.SecretKeyRef](#apiv1beta1secretkeyref)_ | CASecretRef references a Secret containing the CA certificate bundle used to verify the webhook server's certificate.<br />Contains a bundle of PEM-encoded X.509 certificates. |  | Optional: \{\} <br /> |
+| `clientCertSecretRef` _[api.v1beta1.SecretKeyRef](#apiv1beta1secretkeyref)_ | ClientCertSecretRef references a Secret containing the client certificate for mTLS authentication.<br />The referenced key must contain a PEM-encoded client certificate.<br />Use ClientKeySecretRef to provide the corresponding private key. |  | Optional: \{\} <br /> |
+| `clientKeySecretRef` _[api.v1beta1.SecretKeyRef](#apiv1beta1secretkeyref)_ | ClientKeySecretRef references a Secret containing the private key for the client certificate.<br />Required when ClientCertSecretRef is set to enable mTLS. |  | Optional: \{\} <br /> |
+| `insecureSkipVerify` _boolean_ | InsecureSkipVerify disables server certificate verification.<br />WARNING: This should only be used for development/testing and not in production environments. |  | Optional: \{\} <br /> |
+
+
 #### api.v1beta1.WorkloadReference
 
 
@@ -3518,6 +3704,7 @@ _Appears in:_
 - [api.v1beta1.MCPOIDCConfigStatus](#apiv1beta1mcpoidcconfigstatus)
 - [api.v1beta1.MCPTelemetryConfigStatus](#apiv1beta1mcptelemetryconfigstatus)
 - [api.v1beta1.MCPToolConfigStatus](#apiv1beta1mcptoolconfigstatus)
+- [api.v1beta1.MCPWebhookConfigStatus](#apiv1beta1mcpwebhookconfigstatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
